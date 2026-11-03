@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CouchbaseLiteCrudLab": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:55720;http://localhost:55721"
+    }
+  }
+}

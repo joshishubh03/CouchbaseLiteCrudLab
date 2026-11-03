@@ -1,0 +1,243 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Couchbase Lite Explorer</title>
+    <style>
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            padding: 26px;
+            background: #f4f6fa;
+            color: #172033;
+            font-family: Arial,sans-serif
+        }
+
+        main {
+            max-width: 1150px;
+            margin: auto
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 26px
+        }
+
+        .muted {
+            color: #667085;
+            font-size: 13px
+        }
+
+        button {
+            border: 0;
+            border-radius: 7px;
+            padding: 10px 14px;
+            background: #145da0;
+            color: white;
+            cursor: pointer
+        }
+
+        input {
+            padding: 10px;
+            border: 1px solid #ccd2dc;
+            border-radius: 7px;
+            min-width: 220px
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(2,1fr);
+            gap: 14px;
+            margin: 20px 0
+        }
+
+        .card, .panel {
+            background: white;
+            border: 1px solid #e4e7ec;
+            border-radius: 10px;
+            padding: 17px;
+            margin-bottom: 15px
+        }
+
+        .metric {
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 7px
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 9px;
+            flex-wrap: wrap
+        }
+
+        .tablewrap {
+            overflow-x: auto
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        th, td {
+            padding: 11px 9px;
+            border-bottom: 1px solid #eaecf0;
+            text-align: left
+        }
+
+        th {
+            font-size: 12px;
+            color: #475467;
+            text-transform: uppercase
+        }
+
+        .link {
+            color: #145da0;
+            text-decoration: underline;
+            cursor: pointer
+        }
+
+        pre {
+            background: #101828;
+            color: #e6edf7;
+            padding: 16px;
+            border-radius: 8px;
+            overflow: auto;
+            max-height: 420px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere
+        }
+
+        #error {
+            color: #b42318
+        }
+
+        @media(max-width:650px) {
+            body {
+                padding: 13px
+            }
+
+            header {
+                align-items: flex-start;
+                flex-direction: column
+            }
+
+            input {
+                min-width: 0;
+                flex: 1
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header>
+            <div>
+                <h1>Couchbase Lite Explorer</h1>
+                <div class="muted">Local employeecrudlab database • Read-only viewer</div>
+            </div>
+            <button id="refresh">Refresh data</button>
+        </header>
+        <p id="status" class="muted">Connecting...</p>
+        <section class="cards">
+            <div class="card"><div class="muted">Total employees</div><div id="total" class="metric">—</div></div>
+            <div class="card"><div class="muted">Departments</div><div id="departments" class="metric">—</div></div>
+        </section>
+        <section class="panel">
+            <h2>Document lookup</h2>
+            <div class="toolbar">
+                <input id="docId" placeholder="Document ID, e.g. E101">
+                <button id="search">Find document</button>
+            </div>
+            <p class="muted">Lookup uses the document ID, not employee name.</p>
+        </section>
+        <section class="panel">
+            <h2>Employee documents</h2>
+            <div class="tablewrap">
+                <table>
+                    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Department</th><th>Salary</th><th>JSON</th></tr></thead>
+                    <tbody id="rows"><tr><td colspan="6">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+        <section class="panel">
+            <h2>Document JSON</h2><div id="selected" class="muted">Select a document or search by ID.</div>
+            <pre id="json">// No document selected</pre>
+        </section>
+    </main>
+    <script>
+const statusBox=document.getElementById("status");
+function status(message,error=false){statusBox.textContent=message;statusBox.id=error?"error":"status";}
+async function getJson(url){
+ const response=await fetch(url);
+ if(!response.ok){
+  let message="Request failed: "+response.status;
+  try{const body=await response.json();if(body.message)message=body.message;}catch{}
+  throw new Error(message);
+ }
+ return response.json();
+}
+async function loadSummary(){
+ const x=await getJson("/api/summary");
+ document.getElementById("total").textContent=x.totalEmployees;
+ document.getElementById("departments").textContent=x.departmentCount;
+}
+async function loadEmployees(){
+ const employees=await getJson("/api/employees");
+ const tbody=document.getElementById("rows");tbody.replaceChildren();
+ if(!employees.length){
+  const tr=tbody.insertRow();const td=tr.insertCell();td.colSpan=6;td.textContent="No employee documents found.";return;
+ }
+ for(const e of employees){
+  const tr=tbody.insertRow();
+  for(const value of [e.id,e.fullName,e.email,e.department,Number(e.salary).toFixed(2)]){
+   const td=tr.insertCell();td.textContent=value??"";
+  }
+  const td=tr.insertCell();const link=document.createElement("span");
+  link.className="link";link.textContent="View JSON";
+  link.addEventListener("click",()=>showJson(e.id));td.appendChild(link);
+ }
+}
+async function showJson(id){
+ try{
+  const response=await fetch("/api/documents/"+encodeURIComponent(id)+"/json");
+  if(!response.ok){
+   let message="Document not found.";
+   try{const x=await response.json();if(x.message)message=x.message;}catch{}
+   throw new Error(message);
+  }
+  const raw=await response.json();
+  document.getElementById("selected").textContent="Document ID: "+id;
+  document.getElementById("json").textContent=JSON.stringify(raw,null,2);
+  status("Document "+id+" loaded.");
+ }catch(e){document.getElementById("json").textContent=e.message;status(e.message,true);}
+}
+async function refresh(){
+ try{status("Refreshing...");await Promise.all([loadSummary(),loadEmployees()]);
+ status("Connected. Data loaded from local Couchbase Lite.");}
+ catch(e){status(e.message,true);}
+}
+document.getElementById("refresh").addEventListener("click",refresh);
+document.getElementById("search").addEventListener("click",()=>{
+ const id=document.getElementById("docId").value.trim();
+ if(!id){status("Enter a document ID first.",true);return;}showJson(id);
+});
+document.getElementById("docId").addEventListener("keydown",e=>{
+ if(e.key==="Enter")document.getElementById("search").click();
+});
+refresh();
+    </script>
+</body>
+</html>
